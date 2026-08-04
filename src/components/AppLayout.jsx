@@ -227,15 +227,6 @@ export default function AppLayout({ children }) {
             <div className="driver-chip"><span>{profile?.name?.[0] || profile?.username?.[0] || <Bike size={18} />}</span><div><b>{[profile?.name, profile?.last_name].filter(Boolean).join(' ') || profile?.username}</b><small>{profile?.vehicle_type || 'Domiciliario'}</small></div></div>
           </div>
         </header>
-        {activeOrders.length > 0 && (
-          <div style={{ background: '#D4A017', color: '#000', padding: '12px 16px', display: 'flex', alignItems: 'center', gap: '12px', fontSize: '14px', zIndex: 10, borderBottom: '1px solid rgba(0,0,0,0.1)' }}>
-            <span style={{ fontSize: '24px' }}>🚚</span>
-            <div>
-              <div style={{ fontWeight: 800, marginBottom: '2px' }}>Modo reparto activado</div>
-              <div style={{ fontWeight: 500, fontSize: '12.5px', lineHeight: 1.3, opacity: 0.9 }}>Para un seguimiento más preciso, mantén abierta la aplicación mientras realizas la entrega.</div>
-            </div>
-          </div>
-        )}
         <div className="page-scroll" ref={scrollRegion}>{React.isValidElement(children) ? React.cloneElement(children, { gps }) : children}</div>
       </main>
       {orderAlert && <div className="order-alert-toast" role="status" aria-live="assertive">
