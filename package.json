@@ -1,0 +1,25 @@
+{
+  "name": "distrito-delivery",
+  "version": "1.0.0",
+  "private": true,
+  "description": "PWA operativa para los domiciliarios de Distrito BG",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "vite build",
+    "preview": "vite preview --host 0.0.0.0",
+    "check": "npm run build"
+  },
+  "dependencies": {
+    "@distrito/shared-ui": "file:../distrito-shared",
+    "@googlemaps/js-api-loader": "^2.1.1",
+    "lucide-react": "^0.260.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "recharts": "^3.9.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^6.0.5",
+    "vite": "^8.2.0"
+  }
+}
