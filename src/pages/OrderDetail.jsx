@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { LiveDeliveryMap } from '@distrito/shared-ui';
+import LiveDeliveryMap from '../components/LiveDeliveryMap.jsx';
 import { Camera, CheckCircle2, ChevronLeft, Clock3, MapPin, MessageCircle, Navigation, Phone, Star } from 'lucide-react';
 import { Link, useNavigate, useParams } from '../routing';
 import StatusTimeline from '../components/StatusTimeline';
