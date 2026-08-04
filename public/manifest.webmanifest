@@ -1,6 +1,6 @@
 {
-  "name": "Distrito BG Delivery",
-  "short_name": "Distrito Delivery",
+  "name": "Delivery - Distrito BG",
+  "short_name": "Delivery - Distrito BG",
   "description": "Pedidos y entregas en tiempo real para domiciliarios de Distrito BG",
   "start_url": "/",
   "scope": "/",

@@ -30,6 +30,7 @@ export default function AppLayout({ children }) {
   const [soundReady, setSoundReady] = useState(deliveryAlertsReady);
   const [orderAlert, setOrderAlert] = useState(null);
   const [activeOrders, setActiveOrders] = useState([]);
+  const [wakeLock, setWakeLock] = useState(null);
   const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [installed, setInstalled] = useState(() => window.matchMedia?.('(display-mode: standalone)').matches || window.navigator.standalone === true);
   const [gpsPermission, setGpsPermission] = useState('prompt');
@@ -73,6 +74,34 @@ export default function AppLayout({ children }) {
     return () => window.removeEventListener('distrito:active-orders-changed', refreshActiveOrders);
   }, [loadActiveOrders]);
   useEffect(() => { scrollRegion.current?.scrollTo({ top: 0, behavior: 'auto' }); }, [pathname]);
+
+  // Wake Lock API: Keep screen on when there are active orders
+  useEffect(() => {
+    let currentLock = null;
+    const requestWakeLock = async () => {
+      if ('wakeLock' in navigator && document.visibilityState === 'visible' && activeOrders.length > 0) {
+        try {
+          currentLock = await navigator.wakeLock.request('screen');
+          setWakeLock(currentLock);
+        } catch (err) { console.error('Wake Lock error:', err); }
+      }
+    };
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') requestWakeLock();
+    };
+
+    if (activeOrders.length > 0) {
+      requestWakeLock();
+      document.addEventListener('visibilitychange', handleVisibilityChange);
+    } else if (wakeLock) {
+      wakeLock.release().catch(() => {}).finally(() => setWakeLock(null));
+    }
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      if (currentLock) currentLock.release().catch(() => {});
+    };
+  }, [activeOrders.length]);
 
   useEffect(() => {
     const alertHandler = (event) => triggerOrderAlert(event.detail || {});
@@ -198,6 +227,15 @@ export default function AppLayout({ children }) {
             <div className="driver-chip"><span>{profile?.name?.[0] || profile?.username?.[0] || <Bike size={18} />}</span><div><b>{[profile?.name, profile?.last_name].filter(Boolean).join(' ') || profile?.username}</b><small>{profile?.vehicle_type || 'Domiciliario'}</small></div></div>
           </div>
         </header>
+        {activeOrders.length > 0 && (
+          <div style={{ background: '#D4A017', color: '#000', padding: '12px 16px', display: 'flex', alignItems: 'center', gap: '12px', fontSize: '14px', zIndex: 10, borderBottom: '1px solid rgba(0,0,0,0.1)' }}>
+            <span style={{ fontSize: '24px' }}>🚚</span>
+            <div>
+              <div style={{ fontWeight: 800, marginBottom: '2px' }}>Modo reparto activado</div>
+              <div style={{ fontWeight: 500, fontSize: '12.5px', lineHeight: 1.3, opacity: 0.9 }}>Para un seguimiento más preciso, mantén abierta la aplicación mientras realizas la entrega.</div>
+            </div>
+          </div>
+        )}
         <div className="page-scroll" ref={scrollRegion}>{React.isValidElement(children) ? React.cloneElement(children, { gps }) : children}</div>
       </main>
       {orderAlert && <div className="order-alert-toast" role="status" aria-live="assertive">
