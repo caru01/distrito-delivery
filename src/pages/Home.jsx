@@ -22,7 +22,11 @@ export default function Home() {
   const load = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
     try {
-      const [availableData, currentData] = await Promise.all([apiFetch('/delivery/orders/available'), apiFetch('/delivery/orders/current')]);
+      const ts = Date.now();
+      const [availableData, currentData] = await Promise.all([
+        apiFetch(`/delivery/orders/available?t=${ts}`), 
+        apiFetch(`/delivery/orders/current?t=${ts}`)
+      ]);
       const nextAvailable = availableData.orders || [];
       const newOrders = hasLoadedAvailable.current
         ? nextAvailable.filter((order) => !knownAvailableIds.current.has(Number(order.id)))

@@ -17,6 +17,7 @@ export function loadGoogleMaps(apiKey) {
       importLibrary('maps'),
       importLibrary('marker'),
       importLibrary('core'),
+      importLibrary('routes'),
     ]));
   }
   return libraryPromises.get(apiKey);

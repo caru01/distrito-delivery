@@ -46,7 +46,7 @@ export default function LiveDeliveryMap({
   apiKey = '',
   mapId = 'DEMO_MAP_ID',
   store,
-  destination,
+  destinations = [], // Array of destinations
   drivers = [],
   trail = [],
   selectedDriverId = null,
@@ -60,10 +60,15 @@ export default function LiveDeliveryMap({
   const mapsLibraryRef = useRef(null);
   const markerLibraryRef = useRef(null);
   const coreLibraryRef = useRef(null);
+  const routesLibraryRef = useRef(null);
+  const directionsServiceRef = useRef(null);
+  const directionsRendererRef = useRef(null);
+  
   const staticMarkersRef = useRef([]);
   const driverMarkersRef = useRef(new Map());
   const linesRef = useRef([]);
   const fitSignatureRef = useRef('');
+  const routeSignatureRef = useRef('');
   const onDriverSelectRef = useRef(onDriverSelect);
   const [status, setStatus] = useState(apiKey ? 'loading' : 'unavailable');
 
@@ -71,11 +76,12 @@ export default function LiveDeliveryMap({
 
   const normalizedStore = useMemo(() => ({ ...DEFAULT_STORE, ...(store || {}) }), [store]);
   const storePoint = pointFrom(normalizedStore) || pointFrom(DEFAULT_STORE);
-  const destinationPoint = pointFrom(destination);
+  const destinationPoints = useMemo(() => destinations.map(d => ({ ...d, point: pointFrom(d) })).filter(d => d.point), [destinations]);
   const visibleDrivers = useMemo(() => drivers
     .map((driver) => ({ ...driver, point: pointFrom(driver) }))
     .filter((driver) => driver.point), [drivers]);
   const trailPoints = useMemo(() => trail.map(pointFrom).filter(Boolean), [trail]);
+  const currentDriver = useMemo(() => visibleDrivers.find((driver) => selectedDriverId == null || String(driver.id) === String(selectedDriverId)) || visibleDrivers[0], [visibleDrivers, selectedDriverId]);
 
   useEffect(() => {
     if (!apiKey || !hostRef.current) {
@@ -84,11 +90,13 @@ export default function LiveDeliveryMap({
     }
     let disposed = false;
     loadGoogleMaps(apiKey)
-      .then(([, mapsLibrary, markerLibrary, coreLibrary]) => {
+      .then(([places, mapsLibrary, markerLibrary, coreLibrary, routesLibrary]) => {
         if (disposed || !hostRef.current) return;
         mapsLibraryRef.current = mapsLibrary;
         markerLibraryRef.current = markerLibrary;
         coreLibraryRef.current = coreLibrary;
+        routesLibraryRef.current = routesLibrary;
+        
         mapRef.current = new mapsLibrary.Map(hostRef.current, {
           center: storePoint,
           zoom: 14,
@@ -98,6 +106,18 @@ export default function LiveDeliveryMap({
           fullscreenControl: true,
           gestureHandling: 'greedy',
         });
+        
+        directionsServiceRef.current = new routesLibrary.DirectionsService();
+        directionsRendererRef.current = new routesLibrary.DirectionsRenderer({
+          map: mapRef.current,
+          suppressMarkers: true,
+          polylineOptions: {
+            strokeColor: '#3B82F6',
+            strokeOpacity: 0.8,
+            strokeWeight: 5,
+          }
+        });
+
         setStatus('ready');
       })
       .catch((error) => {
@@ -113,12 +133,48 @@ export default function LiveDeliveryMap({
       driverMarkersRef.current.clear();
       linesRef.current.forEach((line) => line.setMap(null));
       linesRef.current = [];
+      if (directionsRendererRef.current) directionsRendererRef.current.setMap(null);
       mapRef.current = null;
       mapsLibraryRef.current = null;
       markerLibraryRef.current = null;
       coreLibraryRef.current = null;
+      routesLibraryRef.current = null;
+      directionsServiceRef.current = null;
+      directionsRendererRef.current = null;
     };
   }, [apiKey, mapId]);
+
+  // Update Route
+  useEffect(() => {
+    if (status !== 'ready' || !directionsServiceRef.current || !directionsRendererRef.current) return;
+    
+    if (showJourney && destinationPoints.length > 0) {
+      const routeStart = currentDriver?.point || trailPoints.at(-1) || storePoint;
+      
+      const sig = `${routeStart.lat},${routeStart.lng}|${destinationPoints.map(d => d.point.lat+','+d.point.lng).join('|')}`;
+      if (routeSignatureRef.current === sig) return; // Prevent spamming API
+      routeSignatureRef.current = sig;
+
+      const origin = routeStart;
+      const destination = destinationPoints[destinationPoints.length - 1].point;
+      const waypoints = destinationPoints.slice(0, -1).map(d => ({ location: d.point, stopover: true }));
+
+      directionsServiceRef.current.route({
+        origin,
+        destination,
+        waypoints,
+        optimizeWaypoints: true,
+        travelMode: 'DRIVING'
+      }, (result, status) => {
+        if (status === 'OK' && directionsRendererRef.current) {
+          directionsRendererRef.current.setDirections(result);
+        }
+      });
+    } else if (directionsRendererRef.current) {
+      directionsRendererRef.current.setDirections({ routes: [] });
+      routeSignatureRef.current = '';
+    }
+  }, [status, showJourney, destinationPoints, currentDriver, trailPoints, storePoint]);
 
   useEffect(() => {
     if (status !== 'ready' || !mapRef.current || !markerLibraryRef.current || !mapsLibraryRef.current || !coreLibraryRef.current) return;
@@ -132,15 +188,16 @@ export default function LiveDeliveryMap({
       content: markerContent('store', normalizedStore.name || 'Distrito BG', normalizedStore.address || 'Punto de salida'),
       zIndex: 20,
     })];
-    if (destinationPoint) {
+    
+    destinationPoints.forEach((dest, i) => {
       staticMarkersRef.current.push(new AdvancedMarkerElement({
         map: mapRef.current,
-        position: destinationPoint,
-        title: destination?.address || 'Dirección de entrega',
-        content: markerContent('destination', 'Destino', destination?.address || 'Dirección del cliente'),
+        position: dest.point,
+        title: dest.address || 'Dirección de entrega',
+        content: markerContent('destination', 'Destino', dest.address || 'Dirección del cliente'),
         zIndex: 18,
       }));
-    }
+    });
 
     const visibleIds = new Set(visibleDrivers.map((driver) => String(driver.id)));
     driverMarkersRef.current.forEach((entry, id) => {
@@ -183,7 +240,6 @@ export default function LiveDeliveryMap({
     linesRef.current.forEach((line) => line.setMap(null));
     linesRef.current = [];
     if (showJourney) {
-      const currentDriver = visibleDrivers.find((driver) => selectedDriverId == null || String(driver.id) === String(selectedDriverId)) || visibleDrivers[0];
       const travelled = [storePoint, ...trailPoints];
       if (currentDriver?.point && !trailPoints.length) travelled.push(currentDriver.point);
       if (travelled.length > 1) {
@@ -196,36 +252,25 @@ export default function LiveDeliveryMap({
           strokeWeight: 5,
         }));
       }
-      const routeStart = currentDriver?.point || trailPoints.at(-1) || storePoint;
-      if (destinationPoint) {
-        linesRef.current.push(new mapsLibraryRef.current.Polyline({
-          map: mapRef.current,
-          path: [routeStart, destinationPoint],
-          geodesic: true,
-          strokeColor: '#FFFFFF',
-          strokeOpacity: 0.45,
-          strokeWeight: 4,
-        }));
-      }
     }
 
-    const signature = `${visibleDrivers.map((driver) => driver.id).sort().join(',')}|${selectedDriverId || ''}|${Boolean(destinationPoint)}`;
+    const signature = `${visibleDrivers.map((driver) => driver.id).sort().join(',')}|${selectedDriverId || ''}|${destinationPoints.length}`;
     if (fitSignatureRef.current !== signature) {
       const bounds = new coreLibraryRef.current.LatLngBounds();
       bounds.extend(storePoint);
       visibleDrivers.forEach((driver) => bounds.extend(driver.point));
-      if (destinationPoint) bounds.extend(destinationPoint);
+      destinationPoints.forEach((d) => bounds.extend(d.point));
       trailPoints.forEach((point) => bounds.extend(point));
       mapRef.current.fitBounds(bounds, 64);
-      if (!visibleDrivers.length && !destinationPoint) mapRef.current.setZoom(15);
+      if (!visibleDrivers.length && !destinationPoints.length) mapRef.current.setZoom(15);
       fitSignatureRef.current = signature;
     }
-  }, [destination, destinationPoint, normalizedStore, selectedDriverId, showJourney, status, storePoint, trailPoints, visibleDrivers]);
+  }, [destinationPoints, normalizedStore, selectedDriverId, showJourney, status, storePoint, trailPoints, visibleDrivers, currentDriver]);
 
   return (
     <div className={`live-delivery-map-shell ${className}`.trim()} data-status={status}>
       <div ref={hostRef} className="live-delivery-map-canvas" aria-label={ariaLabel} />
-      {status === 'loading' && <div className="live-delivery-map-state">Cargando mapa en vivo…</div>}
+      {status === 'loading' && <div className="live-delivery-map-state">Cargando mapa en vivo...</div>}
       {(status === 'error' || status === 'unavailable') && (
         <div className="live-delivery-map-state is-error">
           Google Maps no está disponible para este origen. La ubicación seguirá actualizándose al habilitar la clave web.
