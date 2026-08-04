@@ -30,7 +30,7 @@ export default function AppLayout({ children }) {
   const [soundReady, setSoundReady] = useState(deliveryAlertsReady);
   const [orderAlert, setOrderAlert] = useState(null);
   const [activeOrders, setActiveOrders] = useState([]);
-  const [onboardingOpen, setOnboardingOpen] = useState(true);
+  const [onboardingOpen, setOnboardingOpen] = useState(false);
   const [installed, setInstalled] = useState(() => window.matchMedia?.('(display-mode: standalone)').matches || window.navigator.standalone === true);
   const [gpsPermission, setGpsPermission] = useState('prompt');
   const [gpsError, setGpsError] = useState('');
@@ -118,6 +118,16 @@ export default function AppLayout({ children }) {
     }).catch(() => {});
     return () => { permissionStatus?.removeEventListener?.('change', permissionChangeHandler); };
   }, []);
+
+  // Abrir onboarding solo si falta algún permiso — después de que la API de permisos responda
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const gpsOk = gpsPermission === 'granted';
+      const allReady = installed && soundReady && gpsOk;
+      if (!allReady) setOnboardingOpen(true);
+    }, 600);
+    return () => window.clearTimeout(timer);
+  }, [installed, soundReady, gpsPermission]);
 
   const install = async () => {
     if (!installPrompt) return;
