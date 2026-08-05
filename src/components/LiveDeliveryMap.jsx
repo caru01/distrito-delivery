@@ -104,6 +104,7 @@ export default function LiveDeliveryMap({
           mapTypeControl: false,
           streetViewControl: false,
           fullscreenControl: true,
+          zoomControl: true,
           gestureHandling: 'greedy',
         });
         
@@ -239,20 +240,7 @@ export default function LiveDeliveryMap({
 
     linesRef.current.forEach((line) => line.setMap(null));
     linesRef.current = [];
-    if (showJourney) {
-      const travelled = [storePoint, ...trailPoints];
-      if (currentDriver?.point && !trailPoints.length) travelled.push(currentDriver.point);
-      if (travelled.length > 1) {
-        linesRef.current.push(new mapsLibraryRef.current.Polyline({
-          map: mapRef.current,
-          path: travelled,
-          geodesic: true,
-          strokeColor: '#D4A017',
-          strokeOpacity: 0.95,
-          strokeWeight: 5,
-        }));
-      }
-    }
+    
 
     const signature = `${visibleDrivers.map((driver) => driver.id).sort().join(',')}|${selectedDriverId || ''}|${destinationPoints.length}`;
     if (fitSignatureRef.current !== signature) {
