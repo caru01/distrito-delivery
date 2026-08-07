@@ -4,10 +4,34 @@ export function speak(text) {
   utterance.lang = 'es-CO';
   utterance.rate = 0.9;
   utterance.pitch = 1.1;
-  // Try to find a female Spanish voice
-  const voices = speechSynthesis.getVoices();
-  const femaleVoice = voices.find(v => v.lang.startsWith('es') && (v.name.toLowerCase().includes('female') || v.name.toLowerCase().includes('mujer') || v.name.toLowerCase().includes('paulina') || v.name.toLowerCase().includes('helena') || v.name.toLowerCase().includes('sabina'))) 
-    || voices.find(v => v.lang.startsWith('es'));
-  if (femaleVoice) utterance.voice = femaleVoice;
+
+  const selectVoice = () => {
+    const voices = speechSynthesis.getVoices();
+    if (voices.length === 0) return false;
+    const femaleVoice = voices.find(v =>
+      v.lang.startsWith('es') && (
+        /female|mujer|paulina|helena|sabina|carmen|rosa|luna/i.test(v.name)
+      )
+    ) || voices.find(v => v.lang.startsWith('es'));
+    if (femaleVoice) utterance.voice = femaleVoice;
+    return true;
+  };
+
+  if (!selectVoice()) {
+    const onVoicesChanged = () => {
+      if (selectVoice()) {
+        speechSynthesis.removeEventListener('voiceschanged', onVoicesChanged);
+        speechSynthesis.speak(utterance);
+      }
+    };
+    speechSynthesis.addEventListener('voiceschanged', onVoicesChanged);
+    setTimeout(() => {
+      speechSynthesis.removeEventListener('voiceschanged', onVoicesChanged);
+      selectVoice();
+      speechSynthesis.speak(utterance);
+    }, 500);
+    return;
+  }
+
   speechSynthesis.speak(utterance);
 }

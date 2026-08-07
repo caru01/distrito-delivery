@@ -29,7 +29,7 @@ export default function App() {
   if (pathname === '/') page = <Home />;
   else if (/^\/pedidos\/[^/]+$/.test(pathname)) page = <OrderDetail />;
   else if (pathname === '/historial') page = <History />;
-  else if (pathname === '/estadisticas') page = <Stats />;
+  else if (pathname === '/pedidos') page = <Home />;
   else if (pathname === '/perfil') page = <Profile />;
   else return <Navigate to="/" replace />;
 

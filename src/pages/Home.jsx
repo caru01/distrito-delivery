@@ -5,6 +5,7 @@ import OrderCard from '../components/OrderCard';
 import { apiFetch } from '../services/api';
 import { useNavigate } from '../routing';
 import { announceAvailableOrder } from '../utils/orderAlert';
+import { speak } from '../utils/speech';
 
 export default function Home() {
   const { profile } = useContext(AuthContext);
@@ -52,6 +53,8 @@ export default function Home() {
     setAccepting(id); setError('');
     try {
       await apiFetch(`/delivery/orders/${id}/accept`, { method: 'POST' });
+      // Voice feedback for successful acceptance (female voice configured in utils/speech.js)
+      speak('Pedido aceptado');
       window.dispatchEvent(new Event('distrito:active-orders-changed'));
       navigate(`/pedidos/${id}`);
     }
