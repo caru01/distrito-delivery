@@ -152,8 +152,22 @@ export default function AppLayout({ children }) {
   useEffect(() => {
     const timer = window.setTimeout(() => {
       const gpsOk = gpsPermission === 'granted';
+      const setupDone = localStorage.getItem('distrito_delivery_setup_done') === 'true';
+
+      if (setupDone && gpsOk) {
+        return; // Skip opening onboarding
+      }
+      if (setupDone && (gpsPermission === 'denied' || gpsPermission === 'prompt')) {
+        localStorage.removeItem('distrito_delivery_setup_done');
+      }
+
       const allReady = installed && soundReady && gpsOk;
-      if (!allReady) setOnboardingOpen(true);
+      if (allReady) {
+        localStorage.setItem('distrito_delivery_setup_done', 'true');
+        setOnboardingOpen(false);
+      } else {
+        setOnboardingOpen(true);
+      }
     }, 600);
     return () => window.clearTimeout(timer);
   }, [installed, soundReady, gpsPermission]);

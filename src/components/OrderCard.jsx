@@ -13,7 +13,7 @@ export default function OrderCard({ order, onAccept, accepting = false }) {
       <div className="order-customer"><User size={18} /><strong>{order.customerName}</strong></div>
       <div className="order-address"><MapPin size={18} /><div>{order.address}<small>{order.barrio || 'Barrio sin registrar'}</small></div></div>
       <div className="order-meta-grid">
-        <span><Clock3 size={16} /><b>{time(order.createdAt)}</b><small>{elapsed(order.createdAt)}</small></span>
+        <span><Clock3 size={16} /><b>{new Intl.DateTimeFormat('es-CO', { day: 'numeric', month: 'short', timeZone: 'America/Bogota' }).format(new Date(order.createdAt))} &middot; {time(order.createdAt)}</b><small>{elapsed(order.createdAt)}</small></span>
         <span><Navigation size={16} /><b>{order.distanceKm ? `${order.distanceKm} km` : 'Abrir Maps'}</b><small>Distancia</small></span>
         <span><Banknote size={16} /><b>{money(order.deliveryFee)}</b><small>{order.paymentMethod}</small></span>
       </div>

@@ -4,7 +4,8 @@ import { Camera, CheckCircle2, ChevronLeft, Clock3, MapPin, MessageCircle, Navig
 import { Link, useNavigate, useParams } from '../routing';
 import StatusTimeline from '../components/StatusTimeline';
 import { apiFetch } from '../services/api';
-import { elapsed, money } from '../utils/format';
+import { elapsed, money, dateTime } from '../utils/format';
+import { speak } from '../utils/speech';
 
 function distanceLabel(meters) {
   if (!Number.isFinite(Number(meters))) return 'calculando distancia';
@@ -51,6 +52,7 @@ export default function OrderDetail({ gps = { status: 'idle', accuracy: null, er
     try {
       const data = await apiFetch(`/delivery/orders/${id}/${path}`, { method: 'POST' });
       setOrder(data.order);
+      if (path === 'accept') speak('Pedido aceptado');
       window.dispatchEvent(new Event('distrito:active-orders-changed'));
     }
     catch (actionError) { setError(actionError.message); }
@@ -60,7 +62,7 @@ export default function OrderDetail({ gps = { status: 'idle', accuracy: null, er
     event.preventDefault(); setBusy(true); setError('');
     try {
       const data = await apiFetch(`/delivery/orders/${id}/complete`, { method: 'POST', body: JSON.stringify(delivery) });
-      setOrder(data.order); setFinish(false); window.setTimeout(() => navigate('/historial'), 1200);
+      setOrder(data.order); speak('Pedido entregado'); setFinish(false); window.setTimeout(() => navigate('/historial'), 1200);
     } catch (completeError) { setError(completeError.message); } finally { setBusy(false); }
   };
   const evidence = async (event) => {
@@ -102,7 +104,7 @@ export default function OrderDetail({ gps = { status: 'idle', accuracy: null, er
   return (
     <div className="page-content detail-page">
       <Link className="back-link" to="/"><ChevronLeft size={20} /> Volver a pedidos</Link>
-      <section className="detail-hero"><div><span className="eyebrow">Pedido #{order.id}</span><h1>{order.customerName}</h1><p><MapPin size={17} /> {order.address}, {order.barrio}</p></div><div className="hero-time"><Clock3 /><b>{elapsed(order.createdAt)}</b><small>desde su creación</small></div></section>
+      <section className="detail-hero"><div><span className="eyebrow">Pedido #{order.id}</span><h1>{order.customerName}</h1><p><MapPin size={17} /> {order.address}, {order.barrio}</p></div><div className="hero-time"><Clock3 /><b>{dateTime(order.createdAt)}</b><small>{elapsed(order.createdAt)} desde su creación</small></div></section>
       <StatusTimeline status={order.deliveryStatus} />
       {error && <div className="alert alert-error">{error}</div>}
       {order.deliveryStatus === 'En camino' && <div className={`gps-banner gps-${gps.status}`}><Navigation size={20} /><div><b>{gps.status === 'sharing' ? 'Ubicación compartida en vivo' : gps.status === 'error' ? 'Ubicación requerida' : 'Activando GPS…'}</b><small>{gps.error || (gps.accuracy ? `Precisión aproximada: ${gps.accuracy} m` : 'El cliente y el administrador verán tu recorrido')}</small></div></div>}
