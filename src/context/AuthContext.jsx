@@ -4,6 +4,7 @@ import {
   PROFILE_KEY, accessToken, apiFetch, clearCredentials,
   getDeviceIdentity, refreshToken, renewAccessToken, storeCredentials,
 } from '../services/api';
+import { applyDeliveryTheme } from '../utils/theme';
 
 export const AuthContext = createContext(null);
 const DELIVERY_ROLES = ['Domiciliario', 'Repartidor'];
@@ -14,6 +15,7 @@ export function AuthProvider({ children }) {
   });
   const [loading, setLoading] = useState(true);
   const [profile, setProfile] = useState(null);
+  const [operation, setOperation] = useState({});
   const [settings, setSettings] = useState(null);
   const lastRefresh = useRef(Date.now());
 
@@ -28,6 +30,7 @@ export function AuthProvider({ children }) {
     if (!accessToken() && !refreshToken()) {
       setUser(null);
       setProfile(null);
+      setOperation({});
       setSettings(null);
       return false;
     }
@@ -36,11 +39,9 @@ export function AuthProvider({ children }) {
       applyUser(data);
       const [delivery, configuration] = await Promise.all([apiFetch('/delivery/me'), apiFetch('/admin/settings')]);
       setProfile(delivery.profile);
+      setOperation(delivery.operation || {});
       setSettings(configuration.settings || null);
-      if (configuration.settings?.web_primary_color) {
-        document.documentElement.style.setProperty('--gold', configuration.settings.web_primary_color);
-        document.documentElement.style.setProperty('--gold-light', configuration.settings.web_primary_color);
-      }
+      applyDeliveryTheme(configuration.settings || {});
       return true;
     } catch (error) {
       if (/rol|acceso a Distrito Delivery/i.test(error.message)) {
@@ -49,6 +50,7 @@ export function AuthProvider({ children }) {
       clearCredentials(error.message);
       setUser(null);
       setProfile(null);
+      setOperation({});
       setSettings(null);
       return false;
     }
@@ -60,6 +62,7 @@ export function AuthProvider({ children }) {
     const expired = (event) => {
       setUser(null);
       setProfile(null);
+      setOperation({});
       setSettings(null);
       setLoading(false);
       if (event.detail) sessionStorage.setItem('distrito_delivery_notice', event.detail);
@@ -107,12 +110,10 @@ export function AuthProvider({ children }) {
     setUser(nextUser);
     const delivery = await apiFetch('/delivery/me');
     setProfile(delivery.profile);
+    setOperation(delivery.operation || {});
     const configuration = await apiFetch('/admin/settings');
     setSettings(configuration.settings || null);
-    if (configuration.settings?.web_primary_color) {
-      document.documentElement.style.setProperty('--gold', configuration.settings.web_primary_color);
-      document.documentElement.style.setProperty('--gold-light', configuration.settings.web_primary_color);
-    }
+    applyDeliveryTheme(configuration.settings || {});
   }, []);
 
   const logout = useCallback(async () => {
@@ -124,20 +125,24 @@ export function AuthProvider({ children }) {
         await subscription.unsubscribe();
       }
     } catch {}
-    try { await apiFetch('/delivery/availability', { method: 'POST', body: JSON.stringify({ status: 'Desconectado' }) }); } catch {}
+    if (profile?.shift_active && Number(profile?.committed_orders || 0) === 0) {
+      try { await apiFetch('/delivery/shift/end', { method: 'POST', body: JSON.stringify({}) }); } catch {}
+    }
     try { await apiFetch('/admin/logout', { method: 'POST' }); } catch {}
     clearCredentials();
     setUser(null);
     setProfile(null);
+    setOperation({});
     setSettings(null);
-  }, []);
+  }, [profile?.committed_orders, profile?.shift_active]);
 
   const refreshProfile = useCallback(async () => {
     const data = await apiFetch('/delivery/me');
     setProfile(data.profile);
+    setOperation(data.operation || {});
     return data.profile;
   }, []);
 
-  const value = useMemo(() => ({ user, profile, settings, loading, isAuthenticated: Boolean(user), login, logout, verify, refreshProfile }), [user, profile, settings, loading, login, logout, verify, refreshProfile]);
+  const value = useMemo(() => ({ user, profile, operation, settings, loading, isAuthenticated: Boolean(user), login, logout, verify, refreshProfile }), [user, profile, operation, settings, loading, login, logout, verify, refreshProfile]);
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

@@ -38,10 +38,10 @@ export default function Profile() {
       });
   }, [profile]);
   const loadSessions = () =>
-    apiFetch("/admin/profile/sessions")
-      .then((data) => setSessions(data.data))
+    apiFetch("/auth/me/sessions")
+      .then((data) => setSessions(Array.isArray(data.data) ? data.data : []))
       .catch((err) => setError(err.message));
-  useEffect(loadSessions, []);
+  useEffect(() => { void loadSessions(); }, []);
   const save = async (event) => {
     event.preventDefault();
     setBusy(true);
@@ -79,7 +79,7 @@ export default function Profile() {
   };
   const closeSession = async (session) => {
     try {
-      const data = await apiFetch(`/admin/profile/sessions/${session.id}`, {
+      const data = await apiFetch(`/auth/me/sessions/${session.id}`, {
         method: "DELETE",
       });
       if (data.was_current) {

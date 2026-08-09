@@ -1,0 +1,14 @@
+{
+  "development": {
+    "apiUrl": "auto",
+    "apiPort": "3001"
+  },
+  "androidDevelopment": {
+    "apiUrl": "http://10.0.2.2:3001",
+    "apiPort": "3001"
+  },
+  "production": {
+    "apiUrl": "https://api.distritobg.app",
+    "apiPort": "443"
+  }
+}

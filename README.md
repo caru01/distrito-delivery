@@ -1,181 +1,294 @@
 # Distrito BG Delivery
 
-PWA responsive para la operación de domiciliarios de Distrito BG. Es un cliente
-independiente, pero no crea otra fuente de datos: usa el mismo JWT, la misma API y
-la misma base PostgreSQL del ERP.
+Aplicación operativa para los domiciliarios de Distrito BG. Se entrega como PWA
+responsive y como proyecto Android/Capacitor con seguimiento GPS mediante un
+servicio en primer plano. Usa la misma autenticación, API y base PostgreSQL del
+ERP; no calcula precios, cupos, permisos, estados ni geocercas por su cuenta.
 
-## Funciones implementadas
+## Alcance implementado
 
-- Inicio de sesión por usuario, correo o documento, opción de recordar sesión y
-  recuperación de contraseña.
-- Máximo de tres dispositivos simultáneos y cierre remoto de sesiones desde Perfil.
-- Los roles Domiciliario/Repartidor no caducan por falta de clics mientras esperan
-  pedidos: la PWA renueva el token cada cinco minutos y la API solo finaliza estas
-  sesiones por cierre manual, revocación o expiración absoluta.
-- Pedidos disponibles y asignados sincronizados por Server-Sent Events (SSE), sin
-  recargar la página.
-- Aceptación transaccional: el primer domiciliario que acepta toma el pedido y este
-  desaparece de los demás dispositivos.
-- Cada perfil admite entre uno y cinco pedidos simultáneos, según el cupo definido
-  por el administrador en Usuarios. La API bloquea el perfil durante la aceptación
-  para impedir que solicitudes concurrentes superen ese límite.
-- Detalle de cliente, productos, observaciones, pago, cambio, teléfono, WhatsApp,
-  navegación externa y mapa Google embebido con cocina, destino, motocicleta y
-  recorrido GPS ya informado.
-- Al aceptar un pedido `Listo`, la transacción lo asigna, cambia inmediatamente a
-  `En camino` y abre su detalle para activar el GPS. La entrega termina en
-  `Entregado`; se conservan las marcas de aceptación, salida y duración.
-- GPS automático cada siete segundos mientras existan pedidos `En camino`; una
-  sola lectura se registra en todos los seguimientos activos del domiciliario y
-  deja de compartirse cuando termina el último.
-- La acción **Finalizar entrega** aparece cuando el GPS vigente y con precisión
-  suficiente entra en el radio configurado (150 m por defecto, ajustable entre 50
-  y 500 m). La API repite esa validación para impedir que el navegador la omita.
-  Los pedidos históricos sin coordenadas conservan confirmación manual controlada.
-- Entrega con confirmación obligatoria, observaciones, calificación y fotografía
-  opcionales. La fotografía se redimensiona y comprime antes del envío.
-- Historial, indicadores personales, gráficas diarias y por hora.
-- Perfil personal, vehículo, placa, documentos y cambio de contraseña.
-- Instalación PWA, modo offline informativo, notificaciones web push y alerta de
-  pedido disponible con sonido, vibración y aviso visual en cualquier módulo.
-- Al entrar después del login aparece la preparación del dispositivo: instalar la
-  PWA, conceder GPS y desbloquear el sonido. Puede abrirse nuevamente desde
-  **Configurar dispositivo**.
-- Diseño oscuro `#D4A017`, navegación inferior móvil, barra lateral en escritorio,
-  controles táctiles y soporte de `prefers-reduced-motion`.
-- Una sola región vertical usa `100dvh`, inercia táctil y espacio para la navegación
-  inferior; un límite de errores conserva la sesión y ofrece recarga en lugar de
-  dejar una pantalla negra.
+- Login con usuario, correo o documento, recuperación de contraseña, renovación
+  de sesión y administración de hasta tres dispositivos desde Perfil.
+- Turno explícito por domiciliario: iniciar, mantener presencia mediante heartbeat,
+  transferir el dispositivo GPS oficial y finalizar.
+- Capacidad configurable por usuario y capacidad predeterminada central. La API
+  cuenta pedidos reservados, aceptados y en reparto antes de autorizar otro.
+- Lista de pedidos disponibles con actualización SSE, alerta sonora, voz y
+  vibración; el detalle sensible solo se entrega al responsable del pedido.
+- Aceptación atómica e idempotente. Dos domiciliarios no pueden tomar la misma
+  orden y dos solicitudes simultáneas no pueden superar el cupo del conductor.
+- Recorrido sobre Google Maps, navegación externa, datos de contacto, productos,
+  observaciones, pago y cambio una vez autorizada la asignación.
+- GPS en modos `OFF`, `FREE` y `DELIVERY`, envío por lotes, cola offline acotada,
+  deduplicación y cálculo de distancia física en el servidor.
+- Finalización con confirmación del cliente, observaciones, calificación y foto
+  opcional. La API valida vigencia, precisión y radio de llegada del último GPS.
+- Historial, estadísticas, perfil, vehículo, documentos, Push y diseño adaptable
+  para móvil, tableta y escritorio.
+- Recuperación ante errores sin pantalla negra: permite volver a Pedidos, recargar
+  o cerrar sesión de forma explícita.
 
-## Fuente única de verdad
+## Arquitectura y fuente única de verdad
 
 ```mermaid
 flowchart LR
-  PWA["Distrito Delivery PWA"] -->|"JWT + REST + SSE"| API["distrito-api"]
-  ADM["ERP administrativo"] -->|"REST + SSE"| API
-  WEB["Tienda y seguimiento"] -->|"REST + SSE público validado"| API
+  PWA["PWA o WebView Capacitor"] -->|"JWT, REST y SSE"| API["distrito-api"]
+  ANDROID["Foreground Service Android"] -->|"JWT GPS limitado y lotes"| API
+  ADMIN["ERP administrativo"] -->|"REST y SSE"| API
+  CLIENTE["Seguimiento del cliente"] -->|"SSE público limitado"| API
   API --> DB[("PostgreSQL")]
-  PWA --> MAPS["Google Maps externo"]
+  DB -->|"Outbox + LISTEN/NOTIFY"| API
+  PWA --> MAPS["Google Maps"]
 ```
 
-La PWA nunca escribe en PostgreSQL directamente. Todos los cambios pasan por la
-API, que valida el rol `Domiciliario`, la sesión activa y la transición permitida.
-Los estados de reparto viven en `delivery_status`; el estado comercial existente
-del ERP se sincroniza cuando el pedido sale, se cancela o se entrega.
+Reglas que no deben duplicarse:
+
+| Regla | Fuente autoritativa |
+| --- | --- |
+| Pedido, responsable, versión y destino | `pedidos_app_orders` |
+| Transiciones logísticas | `distrito-api/src/delivery-domain.js` |
+| Operaciones transaccionales | `distrito-api/src/delivery-order-service.js` |
+| Validación e ingestión GPS | `distrito-api/src/delivery-location-service.js` |
+| Cupo por domiciliario | `pedidos_app_delivery_profiles.max_active_orders` |
+| Intervalos, tolerancias y radio | `pedidos_app_settings` |
+| Presentación de estados | `distrito-shared/src/orderFlow.js` |
+| Difusión multiinstancia | `pedidos_app_domain_events` + `LISTEN/NOTIFY` |
+
+La interfaz puede orientar al usuario, pero el servidor vuelve a validar identidad,
+rol, turno, dispositivo, cupo, versión del pedido, transición y geocerca dentro de
+una transacción PostgreSQL.
+
+## Estados y flujo operativo
+
+El ERP conserva dos dimensiones relacionadas:
+
+| Momento | Estado comercial | Estado de entrega | Acción autorizada |
+| --- | --- | --- | --- |
+| Cocina trabajando | `Preparando` | `Pendiente` | Admin/cocina |
+| Disponible para reparto | `Listo` | `Pendiente` | Domiciliario acepta o Admin reserva |
+| Conductor comprometido | `Listo` | `Aceptado` | Responsable inicia recorrido |
+| Pedido salió del local | `En camino` | `En camino` | Responsable comparte GPS |
+| Cliente lo recibió | `Entregado` | `Entregado` | Finalización validada |
+| Flujo abortado | `Cancelado` | `Cancelado` | Admin con regla de negocio |
+
+`Recogido` se normaliza como compatibilidad de datos anteriores. Los pedidos
+nuevos siguen `Pendiente → Aceptado → En camino → Entregado`. Ninguna ruta genérica
+del ERP puede forzar `En camino` o `Entregado`; esas transiciones pasan por el
+servicio de dominio.
+
+La asignación manual de Admin reserva capacidad pero no suplanta la aceptación
+operativa del domiciliario. Toda operación crítica usa `Idempotency-Key`; repetir
+la misma solicitud devuelve el resultado previo y reutilizar la clave con otros
+datos produce conflicto.
+
+## Turnos, presencia y dispositivos
+
+Una sesión autenticada y un turno son conceptos distintos:
+
+1. El login crea una sesión normal del ERP.
+2. **Iniciar turno** vincula un `X-Device-Id` como emisor GPS oficial.
+3. El heartbeat indica presencia y estado del GPS.
+4. Solo ese dispositivo puede subir posiciones o finalizar el turno.
+5. Transferir el turno cambia el dispositivo oficial y queda auditado.
+6. Un turno con pedidos comprometidos no puede cerrarse normalmente.
+7. Admin puede forzar el cierre con permiso `Domicilios:forzar_turno` y motivo.
+
+El mapa administrativo considera conectado a un domiciliario por turno activo y
+heartbeat reciente, no por la antigüedad del último punto GPS. Así un conductor
+quieto continúa conectado y un teléfono que dejó de reportar aparece desconectado.
+
+## GPS y geocerca
+
+Los modos se aplican desde la configuración central:
+
+- `OFF`: turno cerrado; no se recopila ubicación.
+- `FREE`: turno activo sin entrega en recorrido; frecuencia reducida.
+- `DELIVERY`: al menos un pedido `En camino`; frecuencia alta.
+
+Cada posición contiene identificador del cliente, dispositivo, coordenadas,
+precisión y hora de captura. La API rechaza coordenadas fuera de rango, fechas muy
+antiguas o futuras, lotes excesivos y dispositivos que no controlan el turno. Los
+puntos repetidos se ignoran y los saltos físicamente imposibles no aumentan los
+kilómetros.
+
+Para entregar un destino exacto, el servidor exige:
+
+- posición posterior al inicio del recorrido;
+- antigüedad menor que `gps_max_age_seconds`;
+- precisión igual o mejor que `gps_max_accuracy_meters`;
+- distancia dentro de `delivery_completion_radius_meters`.
+
+Si la ubicación del cliente es excepcional, Admin puede crear una autorización de
+geocerca de un solo uso con permiso `Domicilios:override_geocerca` y un motivo
+auditable. La evidencia fotográfica se valida por MIME, firma y tamaño, y se guarda
+separada del JSON del pedido.
+
+## Android nativo y PWA
+
+El proyecto Android está en `android/` y usa `DeliveryLocationService`:
+
+- `Foreground Service` con notificación persistente y reinicio `START_STICKY`;
+- Fused Location Provider en frecuencias `FREE` y `DELIVERY`;
+- cola SQLite para pérdida de red y reenvío por lotes;
+- token GPS limitado almacenado en `EncryptedSharedPreferences` respaldadas por
+  Android Keystore;
+- detección de GPS apagado, permisos revocados y recuperación tras cerrar el
+  proceso visual.
+
+El JWT normal nunca se entrega al servicio. La PWA autenticada solicita un código
+de un solo uso, válido por 90 segundos; el plugin lo pasa al servicio Android, que
+lo intercambia directamente por un token de seguimiento de alcance limitado. El
+token final no vuelve al JavaScript.
+
+La PWA web conserva el mismo flujo y una cola IndexedDB, pero Android/iOS pueden
+suspender JavaScript en segundo plano. Por eso el seguimiento continuo con pantalla
+apagada solo está garantizado por la variante Android nativa. Ningún software puede
+reportar ubicación si el teléfono está apagado, sin batería, sin permiso o con el
+GPS deshabilitado.
+
+## Tiempo real
+
+Las escrituras de negocio y su evento se confirman en la misma transacción. Cada
+instancia recorre incrementalmente el log de eventos compartido; `LISTEN/NOTIFY`
+reduce la latencia cuando el proveedor lo permite y el sondeo incremental conserva
+la propagación cuando se usa un pooler que no reenvía notificaciones. SSE envía
+identificadores estables y el cliente conserva `Last-Event-ID`; al reconectar
+reproduce los eventos pendientes y consulta de nuevo el estado autoritativo.
+
+Los intervalos de reconexión inicial y máximo se administran desde Configuración.
+SSE acelera la interfaz, pero nunca sustituye la consulta REST ni se usa como fuente
+de verdad.
+
+## API principal
+
+Todas las rutas parten de `/api/pedidos`.
+
+| Método y ruta | Función |
+| --- | --- |
+| `GET /delivery/me` | Perfil, turno, capacidad y configuración operativa |
+| `POST /delivery/shift/start` | Inicia o reanuda turno |
+| `POST /delivery/shift/heartbeat` | Actualiza presencia y estado GPS |
+| `POST /delivery/shift/transfer-device` | Transfiere el dispositivo oficial |
+| `POST /delivery/shift/end` | Finaliza turno sin compromisos |
+| `GET /delivery/orders/available` | Lista mínima de pedidos disponibles/reservados |
+| `GET /delivery/orders/current` | Pedidos comprometidos y capacidad |
+| `GET /delivery/orders/:id` | Detalle solo para el responsable |
+| `POST /delivery/orders/:id/accept` | Acepta atómicamente |
+| `POST /delivery/orders/:id/pickup` | Inicia el recorrido (`En camino`) |
+| `POST /delivery/orders/:id/complete` | Finaliza con geocerca |
+| `POST /delivery/location/batch` | Lote GPS desde la PWA |
+| `POST /delivery/native/bootstrap` | Crea código nativo de un solo uso |
+| `POST /delivery/native/exchange` | Intercambia código dentro del plugin |
+| `POST /delivery/native/location/batch` | Lote GPS del servicio Android |
+| `GET /delivery/history` | Historial personal |
+| `GET /delivery/stats` | Indicadores personales |
+| `GET /realtime/stream` | SSE autenticado con recuperación |
+
+Admin complementa el flujo mediante `/admin/delivery/overview`, asignación,
+finalización forzada de turno, excepción de geocerca y lectura autorizada de
+evidencias. El cliente solo recibe datos públicos limitados durante el seguimiento.
+
+## Configuración central
+
+En **Admin → Configuración → Domicilios** se administran:
+
+- coordenadas/dirección de la cocina y radio de finalización;
+- intervalo GPS en entrega y libre;
+- intervalo de heartbeat y umbral de desconexión;
+- antigüedad y precisión GPS máximas;
+- límite de cola offline y capacidad predeterminada;
+- reconexión SSE inicial y máxima;
+- identidad visual, idioma, voz y alertas.
+
+Los campos tienen límites en API y restricciones `CHECK` en PostgreSQL. El cupo
+individual configurado en Usuarios prevalece sobre el valor predeterminado.
 
 ## Desarrollo local
 
-```powershell
-npm ci
-Copy-Item .env.example .env
-npm run dev
-```
-
-La aplicación abre en `http://localhost:5175`. Con `VITE_API_URL=auto` resuelve la
-API usando la misma IP/hostname y el puerto `VITE_API_PORT` (predeterminado `3001`).
-La clave y el Map ID no se duplican: durante el build se leen de
-`../distrito-web/.env`, que continúa fuera del control de versiones. En CI también
-pueden inyectarse como `VITE_GOOGLE_MAPS_API_KEY` y `VITE_GOOGLE_MAPS_MAP_ID`.
-
-Desde la raíz de DistritoBG también se pueden iniciar los cuatro servicios:
+Desde la raíz del repositorio:
 
 ```powershell
 .\start-local.ps1
 ```
 
-El script compila la PWA y la expone en `0.0.0.0:5175`; imprime las direcciones LAN
-y pública detectadas. Para detener solo esos procesos usa `.\stop-local.ps1`.
-
-> La geolocalización, instalación completa y push requieren contexto seguro en la
-> mayoría de navegadores. `localhost` funciona para desarrollo; al entrar mediante
-> una IP LAN usa HTTPS (proxy/túnel/certificado local) para probar GPS y PWA.
-
-Abrir `http://192.168.x.x:5175` sirve para validar la interfaz, pero el navegador no
-entregará coordenadas en ese origen ni permitirá finalizar pedidos geolocalizados.
-Para una prueba operativa usa
-`https://delivery.distritobg.app` (o un origen local HTTPS válido), concede el
-permiso de ubicación y mantén Delivery abierta o instalada.
-Los navegadores no garantizan GPS en segundo plano como una aplicación nativa; la
-PWA solicita bloqueo de pantalla durante el reparto y reanuda el seguimiento al
-volver a estar visible.
-
-## API utilizada
-
-Todas las rutas parten de `/api/pedidos`.
-
-| Ruta | Función |
-| --- | --- |
-| `POST /admin/login` | Login compartido del ERP |
-| `POST /admin/refresh-token` | Renovar el token corto |
-| `GET /delivery/me` | Identidad y perfil operativo |
-| `GET /delivery/orders/available` | Pedidos `Listo` disponibles/asignados |
-| `GET /delivery/orders/current` | Entrega activa |
-| `GET /delivery/orders/:id` | Detalle autorizado |
-| `POST /delivery/orders/:id/accept` | Aceptación atómica |
-| `POST /delivery/orders/:id/pickup` | Compatibilidad con pedidos aceptados bajo el flujo anterior |
-| `POST /delivery/orders/:id/location` | Muestra GPS y distancia autorizada a destino |
-| `POST /delivery/orders/:id/complete` | Confirmar entrega dentro de la geocerca |
-| `GET /delivery/history` | Historial personal |
-| `GET /delivery/stats` | Indicadores personales |
-| `PUT /delivery/profile` | Datos y credenciales del domiciliario |
-| `POST /delivery/push/subscribe` | Push asociado al usuario |
-| `GET /realtime/stream` | Canal SSE autenticado |
-
-## PWA y notificaciones
-
-- Android/Chrome: menú “Instalar aplicación” o el aviso interno cuando el navegador
-  emita `beforeinstallprompt`.
-- iPhone/iPad: Safari → Compartir → “Agregar a pantalla de inicio”. Las
-  notificaciones web funcionan en versiones compatibles una vez instalada la PWA.
-- El service worker conserva el shell básico y muestra una vista informativa sin
-  conexión. Pedidos, aceptación y entrega requieren red para evitar inconsistencias.
-- El navegador exige una interacción para habilitar audio. El login lo activa y,
-  si la sesión fue restaurada, aparece **Activar sonido** en la barra. Al ingresar
-  un pedido nuevo se reproducen tres tonos, vibra el dispositivo compatible y se
-  muestra un aviso de nueve segundos con acceso a la cola.
-- Web Push continúa siendo el mecanismo para recibir avisos cuando la PWA está en
-  segundo plano o suspendida; el sonido interno cubre la aplicación abierta.
-
-## Publicación en `delivery.distritobg.app`
-
-1. Compilar con `npm run build`.
-2. Publicar `dist/` con reescritura SPA hacia `index.html`.
-3. Configurar `VITE_API_URL` con el origen HTTPS real de la API.
-4. Crear DNS/SSL para `delivery.distritobg.app`.
-5. Incluir el origen en `CORS_ORIGINS` de la API (también existe en la lista segura).
-6. Validar login, refresh, SSE, permiso GPS, cámara, push e instalación desde un
-   dispositivo real.
-
-## Decisiones de rendimiento y privacidad
-
-- La ubicación solo se almacena durante una entrega `En camino` y el seguimiento
-  público solo la devuelve durante ese estado.
-- Las listas usan índices parciales por estado/responsable agregados en
-  `006_delivery_operations.sql`; `007_delivery_guards_and_retention.sql` impide dos
-  entregas activas por domiciliario y acelera la política de retención GPS.
-- La ruta de navegación se delega a Google Maps mediante URL. El detalle reutiliza
-  `LiveDeliveryMap` para visualizar el recorrido registrado; no mantiene otra
-  implementación ni decide la llegada en el frontend.
-- SSE reduce consultas repetidas. El sondeo de 20 segundos del mapa administrativo
-  es una red de seguridad si el canal se reconecta.
-- La navegación cliente usa un router interno limitado a rutas absolutas conocidas;
-  no incorpora los modos SSR/RSC que no necesita esta PWA y `npm audit --omit=dev`
-  queda sin vulnerabilidades conocidas en la validación actual.
-- Para varias instancias de API, el siguiente paso de infraestructura es propagar
-  eventos mediante PostgreSQL `LISTEN/NOTIFY` o Redis; el hub actual es por proceso.
-- La fotografía opcional tiene límite de 2 MB comprimidos. Para alto volumen se
-  recomienda mover evidencias a almacenamiento de objetos y guardar solo su URL.
-
-## Validación
+O únicamente Delivery:
 
 ```powershell
-npm run build
+Set-Location .\distrito-delivery
+npm ci
+Copy-Item .env.example .env
+npm run dev
+```
 
-cd ..\distrito-api
+La PWA abre en `http://localhost:5175`. `config/api-environments.json` es la fuente
+única de las URLs: navegador local usa `auto`, Android de desarrollo usa el host
+del emulador y cualquier build de producción queda bloqueado a
+`https://api.distritobg.app`. Las credenciales reales continúan en archivos `.env`
+ignorados o en el gestor de secretos; nunca se copian al README.
+
+La interfaz puede abrirse por IP LAN, pero GPS, cámara, Push e instalación PWA
+requieren HTTPS salvo en `localhost`. Para una prueba real desde otro dispositivo
+usa el dominio HTTPS o un proxy con certificado válido.
+
+## Compilar PWA y Android
+
+```powershell
+Set-Location .\distrito-delivery
+
+# Desarrollo Android: API del emulador http://10.0.2.2:3001 y APK debug.
+npm run android:development
+
+# Producción: API HTTPS fija, comprobación de assets, tests, APK y AAB firmados.
+npm run android:release
+```
+
+La configuración Release exige por defecto
+`%USERPROFILE%\.distritobg\android-release-signing.properties`; también se puede
+indicar otro archivo mediante `DISTRITO_BG_SIGNING_PROPERTIES`. La clave y sus
+contraseñas nunca están en el proyecto ni se empaquetan en la aplicación.
+
+Resultados:
+
+- `android/app/build/outputs/apk/debug/app-debug.apk` para desarrollo;
+- `android/app/build/outputs/apk/release/app-release.apk` para instalación directa;
+- `android/app/build/outputs/bundle/release/app-release.aab` para Google Play.
+
+El Release establece `usesCleartextTraffic=false`, `allowMixedContent=false`,
+rechaza redirecciones en el servicio GPS y valida nuevamente en Java que la API sea
+`https://api.distritobg.app/api/pedidos`.
+
+Para publicar la PWA, sirve `dist/` con fallback SPA a `index.html`, configura DNS
+y TLS para `delivery.distritobg.app`, incluye el origen en CORS y prueba login,
+refresh, SSE, GPS, cámara, Push e instalación en dispositivos reales.
+
+## Operación, retención y diagnóstico
+
+- `/api/pedidos/health` informa PostgreSQL, outbox, clientes SSE, GPS reciente y
+  turnos activos sin exponer secretos.
+- Los logs son JSON e incluyen `request_id`, usuario, conductor, pedido y dispositivo;
+  no incluyen tokens ni el cuerpo de las solicitudes.
+- `npm run db:prune-delivery` elimina por política los puntos y eventos antiguos.
+  Los avisos GPS del log se conservan un día y los eventos de negocio publicados,
+  treinta días. Después actualiza estadísticas. Prográmalo como tarea recurrente.
+- Si el servicio pierde autorización, conserva y acota la cola GPS; al volver a
+  abrir la app se renueva el bootstrap nativo.
+
+## Validación obligatoria
+
+```powershell
+Set-Location .\distrito-api
 npm run migrate
 npm run check
 npm test
+
+Set-Location ..\distrito-delivery
+npm run android:release
 ```
 
-No agregues lógica de precios, permisos o estados críticos al navegador. Tampoco
-dupliques tablas: amplía la migración siguiente y expón el cambio desde la API.
+Las pruebas cubren transiciones, geocerca, aceptación concurrente, capacidad,
+reserva administrativa, idempotencia y deduplicación GPS. Antes de producción se
+debe completar además una corrida en dispositivos reales con pantalla apagada,
+pérdida de red, GPS deshabilitado, transferencia de dispositivo y recuperación SSE.
+
+El estado exacto del Release, la firma y la compatibilidad actual de Render están
+en [`../distrito-docs/ANDROID_RELEASE_2026-08-09.md`](../distrito-docs/ANDROID_RELEASE_2026-08-09.md).

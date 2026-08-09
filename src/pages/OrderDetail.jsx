@@ -1,11 +1,11 @@
-import React, { useCallback, useEffect, useState } from 'react';
-import LiveDeliveryMap from '../components/LiveDeliveryMap.jsx';
+import React, { useCallback, useContext, useEffect, useState } from 'react';
 import { Camera, CheckCircle2, ChevronLeft, Clock3, MapPin, MessageCircle, Navigation, Phone, Star } from 'lucide-react';
 import { Link, useNavigate, useParams } from '../routing';
 import StatusTimeline from '../components/StatusTimeline';
 import { apiFetch } from '../services/api';
 import { elapsed, money, dateTime } from '../utils/format';
-import { speak } from '../utils/speech';
+import { LiveDeliveryMap, speakNotification } from '@distrito/shared-ui';
+import { AuthContext } from '../context/AuthContext';
 
 function distanceLabel(meters) {
   if (!Number.isFinite(Number(meters))) return 'calculando distancia';
@@ -23,6 +23,7 @@ async function imageToDataUrl(file) {
 }
 
 export default function OrderDetail({ gps = { status: 'idle', accuracy: null, error: '' } }) {
+  const { settings } = useContext(AuthContext);
   const { id } = useParams();
   const navigate = useNavigate();
   const [order, setOrder] = useState(null);
@@ -52,7 +53,7 @@ export default function OrderDetail({ gps = { status: 'idle', accuracy: null, er
     try {
       const data = await apiFetch(`/delivery/orders/${id}/${path}`, { method: 'POST' });
       setOrder(data.order);
-      if (path === 'accept') speak('Pedido aceptado');
+      if (path === 'accept') speakNotification('order_accepted', settings || {});
       window.dispatchEvent(new Event('distrito:active-orders-changed'));
     }
     catch (actionError) { setError(actionError.message); }
@@ -61,8 +62,8 @@ export default function OrderDetail({ gps = { status: 'idle', accuracy: null, er
   const complete = async (event) => {
     event.preventDefault(); setBusy(true); setError('');
     try {
-      const data = await apiFetch(`/delivery/orders/${id}/complete`, { method: 'POST', body: JSON.stringify(delivery) });
-      setOrder(data.order); speak('Pedido entregado'); setFinish(false); window.setTimeout(() => navigate('/historial'), 1200);
+      const data = await apiFetch(`/delivery/orders/${id}/complete`, { method: 'POST', body: JSON.stringify({ ...delivery, geofenceOverrideId: order.geofenceOverrideId }) });
+      setOrder(data.order); speakNotification('order_delivered', settings || {}); setFinish(false); window.setTimeout(() => navigate('/historial'), 1200);
     } catch (completeError) { setError(completeError.message); } finally { setBusy(false); }
   };
   const evidence = async (event) => {
@@ -80,7 +81,7 @@ export default function OrderDetail({ gps = { status: 'idle', accuracy: null, er
   const canComplete = deliveryStatus === 'en camino';
   const liveArrival = gps.arrivals?.[Number(id)] || order.arrival || {};
   const exactDestination = Boolean(order.arrival?.hasExactDestination);
-  const withinCompletionRange = !exactDestination || liveArrival.isWithinRange === true;
+  const withinCompletionRange = exactDestination ? liveArrival.isWithinRange === true : Boolean(order.geofenceOverrideId);
   const currentDriver = gps.latitude != null && gps.longitude != null
     ? [{
       id: order.deliveryUserId || 'current',
@@ -118,7 +119,7 @@ export default function OrderDetail({ gps = { status: 'idle', accuracy: null, er
             {canComplete && exactDestination && !withinCompletionRange && (
               <small>{gps.error || `Estás a ${distanceLabel(liveArrival.distanceMeters)}. El botón aparecerá dentro de ${liveArrival.radiusMeters || 150} m.`}</small>
             )}
-            {canComplete && !exactDestination && <small>Este pedido histórico no tiene coordenadas exactas; se permitirá confirmación manual.</small>}
+            {canComplete && !exactDestination && <small>{order.geofenceOverrideId ? 'Administración autorizó una excepción de geocerca auditable.' : 'Este pedido no tiene coordenadas exactas. Solicita a administración una excepción para finalizar.'}</small>}
           </div>
           {canAccept && <button className="button button-primary button-large" disabled={busy} onClick={() => action('accept')}>Aceptar pedido</button>}
           {canPickup && <button className="button button-primary button-large" disabled={busy} onClick={() => action('pickup')}><Navigation size={19} /> He recogido el pedido</button>}

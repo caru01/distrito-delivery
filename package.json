@@ -6,11 +6,19 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
-    "build": "vite build",
+    "build": "vite build --mode production",
+    "build:development": "vite build --mode development",
+    "build:android:development": "vite build --mode android-development",
+    "build:android:release": "vite build --mode production",
+    "android:development": "node scripts/android-build.mjs development",
+    "android:release": "node scripts/android-build.mjs production",
     "preview": "vite preview --host 0.0.0.0",
     "check": "npm run build"
   },
   "dependencies": {
+    "@capacitor/android": "^8.0.0",
+    "@capacitor/core": "^8.0.0",
+    "@distrito/shared-ui": "file:../distrito-shared",
     "@googlemaps/js-api-loader": "^2.1.1",
     "lucide-react": "^0.260.0",
     "react": "^18.2.0",
@@ -18,7 +26,9 @@
     "recharts": "^3.9.0"
   },
   "devDependencies": {
+    "@capacitor/cli": "^8.0.0",
     "@vitejs/plugin-react": "^6.0.5",
+    "typescript": "^7.0.2",
     "vite": "^8.2.0"
   }
 }

@@ -2,13 +2,15 @@ import React from 'react';
 import { ArrowRight, Banknote, Clock3, MapPin, Navigation, User } from 'lucide-react';
 import { Link } from '../routing';
 import { elapsed, money, time } from '../utils/format';
+import { deliveryStatusMeta } from '@distrito/shared-ui';
 
 export default function OrderCard({ order, onAccept, accepting = false }) {
+  const status = deliveryStatusMeta(order.deliveryStatus);
   return (
     <article className="order-card">
       <div className="order-card-head">
         <div><span className="eyebrow">Pedido</span><h3>#{order.id}</h3></div>
-        <span className={`status-pill status-${String(order.deliveryStatus).toLowerCase().replace(/\s/g, '-')}`}>{order.deliveryStatus}</span>
+        <span className={`status-pill status-tone-${status.tone}`} title={status.description}><i aria-hidden="true" />{status.label}</span>
       </div>
       <div className="order-customer"><User size={18} /><strong>{order.customerName}</strong></div>
       <div className="order-address"><MapPin size={18} /><div>{order.address}<small>{order.barrio || 'Barrio sin registrar'}</small></div></div>

@@ -1,5 +1,6 @@
 import React from 'react';
 import { CheckCircle2, Download, MapPin, ShieldCheck, Smartphone, Volume2, X } from 'lucide-react';
+import { isSecureDeliveryContext } from '../config/api';
 
 function Step({ icon: Icon, title, description, complete, children }) {
   return <article className={`onboarding-step ${complete ? 'is-complete' : ''}`}>
@@ -18,18 +19,19 @@ export default function DeliveryOnboarding({
   onEnableGps,
   soundReady,
   onEnableSound,
+  setupComplete,
   onClose,
 }) {
   if (!open) return null;
   const isIos = /iphone|ipad|ipod/i.test(navigator.userAgent);
-  const secureContext = window.isSecureContext || ['localhost', '127.0.0.1'].includes(window.location.hostname);
+  const secureContext = isSecureDeliveryContext();
   const gpsReady = gpsPermission === 'granted';
 
   return <div className="onboarding-backdrop" role="presentation">
     <section className="onboarding-card" role="dialog" aria-modal="true" aria-labelledby="delivery-onboarding-title">
       <header>
         <span className="onboarding-logo"><ShieldCheck /></span>
-        <div><span className="eyebrow">Preparar este dispositivo</span><h2 id="delivery-onboarding-title">Distrito Delivery listo para trabajar</h2><p>Activa estas funciones para recibir pedidos y compartir el recorrido.</p></div>
+        <div><span className="eyebrow">{setupComplete ? 'Dispositivo preparado' : 'Preparar este dispositivo'}</span><h2 id="delivery-onboarding-title">{setupComplete ? 'Todo está listo para trabajar' : 'Distrito Delivery listo para trabajar'}</h2><p>{setupComplete ? 'La instalación, el GPS y las alertas ya están configurados.' : 'Activa estas funciones para recibir pedidos y compartir el recorrido.'}</p></div>
         <button className="onboarding-close" type="button" onClick={onClose} aria-label="Cerrar configuración inicial"><X /></button>
       </header>
 
@@ -49,7 +51,7 @@ export default function DeliveryOnboarding({
         </Step>
       </div>
 
-      <footer><p>Por seguridad del dispositivo, el GPS web funciona en HTTPS y puede pausarse si el sistema cierra la aplicación.</p><button className="button button-ghost button-large" type="button" onClick={onClose}>Continuar a pedidos</button></footer>
+      <footer><p>El navegador conserva estos permisos. Por seguridad, la ubicación en vivo se comparte mientras Delivery está abierta y hay pedidos activos.</p><button className={`button ${setupComplete ? 'button-primary' : 'button-ghost'} button-large`} type="button" onClick={onClose}>Continuar a pedidos</button></footer>
     </section>
   </div>;
 }

@@ -57,13 +57,17 @@ export async function apiFetch(path, options = {}, retry = true) {
   if (!token && refreshToken()) token = await renewAccessToken();
   const headers = new Headers(options.headers || {});
   if (token) headers.set('Authorization', `Bearer ${token}`);
+  headers.set('X-Device-Id', getDeviceIdentity().deviceId);
+  if (/^(POST|PUT|PATCH|DELETE)$/i.test(options.method || 'GET') && !headers.has('Idempotency-Key')) {
+    headers.set('Idempotency-Key', globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`);
+  }
   if (options.body && !(options.body instanceof FormData) && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
   const response = await fetch(`${API_URL}${path}`, { ...options, headers });
   if (retry && (response.status === 401 || response.status === 403)) {
     const body = await response.clone().json().catch(() => ({}));
     if (response.status === 401 || body.code === 'SESSION_EXPIRED' || /token|sesión|sesion/i.test(body.error || '')) {
       await renewAccessToken();
-      return apiFetch(path, options, false);
+      return apiFetch(path, { ...options, headers }, false);
     }
   }
   const data = await response.json().catch(() => ({}));

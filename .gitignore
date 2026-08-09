@@ -1,5 +1,11 @@
 node_modules/
 dist/
 .env
-.env.local
+.env.*
+!.env.example
 *.log
+*.jks
+*.keystore
+*.p12
+*signing*.properties
+keystore.properties
