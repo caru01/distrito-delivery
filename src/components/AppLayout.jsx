@@ -302,7 +302,7 @@ export default function AppLayout({ children }) {
       } catch (error) {
         if (error.code !== 'TRACKING_ACTIVE_ON_ANOTHER_DEVICE') throw error;
         const transfer = window.confirm('Otro dispositivo controla el GPS de este turno. ¿Quieres transferir el seguimiento a este dispositivo?');
-        if (!transfer) throw error;
+        if (!transfer) throw new Error('El seguimiento GPS continúa activo en el dispositivo original. Finaliza el turno allá o transfiérelo aquí.');
         await apiFetch('/delivery/shift/transfer-device', {
           method: 'POST', body: JSON.stringify({ confirm: true }),
         });

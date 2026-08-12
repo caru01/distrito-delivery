@@ -44,14 +44,16 @@ export function AuthProvider({ children }) {
       applyDeliveryTheme(configuration.settings || {});
       return true;
     } catch (error) {
-      if (/rol|acceso a Distrito Delivery/i.test(error.message)) {
-        await apiFetch('/admin/logout', { method: 'POST' }).catch(() => {});
+      if (error.status === 401 || error.status === 403 || /rol|acceso a Distrito Delivery/i.test(error.message)) {
+        if (/rol|acceso a Distrito Delivery/i.test(error.message)) {
+          await apiFetch('/admin/logout', { method: 'POST' }).catch(() => {});
+        }
+        clearCredentials(error.message);
+        setUser(null);
+        setProfile(null);
+        setOperation({});
+        setSettings(null);
       }
-      clearCredentials(error.message);
-      setUser(null);
-      setProfile(null);
-      setOperation({});
-      setSettings(null);
       return false;
     }
   }, [applyUser]);
