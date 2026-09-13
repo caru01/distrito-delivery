@@ -1,7 +1,9 @@
 import React, { useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { BarChart3, BellRing, Bike, Download, History, Home, LogOut, Power, Settings2, User, Volume2, Wifi, WifiOff } from 'lucide-react';
-import { Link, NavLink, useLocation } from '../routing';
+import { Link, NavLink, useLocation, useNavigate } from '../routing';
 import { AuthContext } from '../context/AuthContext';
+import { App } from '@capacitor/app';
+import { StatusBar, Style } from '@capacitor/status-bar';
 import { isSecureDeliveryContext } from '../config/api';
 import { apiFetch } from '../services/api';
 import useRealtime from '../hooks/useRealtime';
@@ -14,6 +16,7 @@ import {
   requestNativeLocationPermissions,
   stopNativeLocation,
 } from '../services/nativeLocation';
+import { modalManager, useBackModal } from '../services/modalManager';
 import DeliveryOnboarding from './DeliveryOnboarding';
 
 const nav = [
@@ -34,8 +37,9 @@ function urlBase64ToUint8Array(value) {
 }
 
 export default function AppLayout({ children }) {
-  const { profile, operation, settings, logout, refreshProfile } = useContext(AuthContext);
+  const { profile, operation, settings, logout, refreshProfile, verify } = useContext(AuthContext);
   const { pathname } = useLocation();
+  const navigate = useNavigate();
   const scrollRegion = useRef(null);
   const [installPrompt, setInstallPrompt] = useState(() => window.__distritoDeliveryInstallPrompt || null);
   const [pushState, setPushState] = useState(typeof Notification === 'undefined' ? 'unsupported' : Notification.permission);
@@ -118,6 +122,78 @@ export default function AppLayout({ children }) {
     return () => window.removeEventListener('distrito:active-orders-changed', refreshActiveOrders);
   }, [loadActiveOrders]);
   useEffect(() => { scrollRegion.current?.scrollTo({ top: 0, behavior: 'auto' }); }, [pathname]);
+
+  // Experiencia Nativa: Barra de estado con tema Distrito BG (#0d0d0f)
+  useEffect(() => {
+    if (nativeApp) {
+      StatusBar.setBackgroundColor({ color: '#0d0d0f' }).catch(() => {});
+      StatusBar.setStyle({ style: Style.Dark }).catch(() => {});
+    }
+  }, [nativeApp]);
+
+  useBackModal(onboardingOpen, () => setOnboardingOpen(false));
+
+  const pathnameRef = useRef(pathname);
+  useEffect(() => { pathnameRef.current = pathname; }, [pathname]);
+
+  const navigateRef = useRef(navigate);
+  useEffect(() => { navigateRef.current = navigate; }, [navigate]);
+
+  const verifyRef = useRef(verify);
+  useEffect(() => { verifyRef.current = verify; }, [verify]);
+
+  const loadActiveOrdersRef = useRef(loadActiveOrders);
+  useEffect(() => { loadActiveOrdersRef.current = loadActiveOrders; }, [loadActiveOrders]);
+
+  const refreshProfileRef = useRef(refreshProfile);
+  useEffect(() => { refreshProfileRef.current = refreshProfile; }, [refreshProfile]);
+
+  // Ciclo de Vida Nativo: Reanudación y Botón Atrás inteligente
+  useEffect(() => {
+    if (!nativeApp) return undefined;
+
+    let resumeListener = null;
+    let backListener = null;
+
+    const setupNativeLifecycle = async () => {
+      try {
+        resumeListener = await App.addListener('appStateChange', ({ isActive }) => {
+          if (isActive) {
+            verifyRef.current?.().catch(() => {});
+            loadActiveOrdersRef.current?.().catch(() => {});
+            refreshProfileRef.current?.().catch(() => {});
+          }
+        });
+
+        backListener = await App.addListener('backButton', () => {
+          // PRIORIDAD 1: Si existe un modal abierto, cerrarlo inmediatamente
+          if (modalManager.hasOpenModals()) {
+            modalManager.closeTopModal();
+            return;
+          }
+
+          // PRIORIDAD 2: Si no hay modal abierto y está en subrutas (/pedidos/:id, /historial, /perfil, /estadisticas)
+          const currentPath = pathnameRef.current || '';
+          if (currentPath !== '/' && currentPath !== '') {
+            navigateRef.current?.('/');
+            return;
+          }
+
+          // PRIORIDAD 3: Si el usuario está en Home (/), minimizar la aplicación sin cerrarla abruptamente
+          App.minimizeApp().catch(() => {});
+        });
+      } catch (err) {
+        console.warn('No fue posible vincular eventos de App nativa:', err);
+      }
+    };
+
+    setupNativeLifecycle();
+
+    return () => {
+      resumeListener?.remove?.();
+      backListener?.remove?.();
+    };
+  }, [nativeApp]);
 
   // Wake Lock API: Keep screen on when there are active orders
   useEffect(() => {

@@ -17,7 +17,9 @@
   },
   "dependencies": {
     "@capacitor/android": "^8.0.0",
+    "@capacitor/app": "^8.1.1",
     "@capacitor/core": "^8.0.0",
+    "@capacitor/status-bar": "^8.0.3",
     "@distrito/shared-ui": "file:../distrito-shared",
     "@googlemaps/js-api-loader": "^2.1.1",
     "lucide-react": "^0.260.0",

@@ -6,6 +6,8 @@ import { apiFetch } from '../services/api';
 import { elapsed, money, dateTime } from '../utils/format';
 import { LiveDeliveryMap, speakNotification } from '@distrito/shared-ui';
 import { AuthContext } from '../context/AuthContext';
+import { openGoogleMaps, openWaze } from '../services/nativeNavigation';
+import { useBackModal } from '../services/modalManager';
 
 function distanceLabel(meters) {
   if (!Number.isFinite(Number(meters))) return 'calculando distancia';
@@ -31,7 +33,26 @@ export default function OrderDetail({ gps = { status: 'idle', accuracy: null, er
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [finish, setFinish] = useState(false);
+  const [navModalOpen, setNavModalOpen] = useState(false);
   const [delivery, setDelivery] = useState({ confirmReceived: false, notes: '', rating: '', evidence: null });
+
+  useBackModal(finish, () => setFinish(false));
+  useBackModal(navModalOpen, () => setNavModalOpen(false));
+
+  const startNavigation = async (provider) => {
+    if (!order) return;
+    const lat = order.destinationLatitude != null ? Number(order.destinationLatitude) : null;
+    const lng = order.destinationLongitude != null ? Number(order.destinationLongitude) : null;
+    const address = `${order.address || ''}, ${order.barrio || ''}, Bucaramanga`.trim();
+
+    setNavModalOpen(false);
+
+    if (provider === 'google-maps') {
+      await openGoogleMaps({ latitude: lat, longitude: lng, address });
+    } else if (provider === 'waze') {
+      await openWaze({ latitude: lat, longitude: lng, address });
+    }
+  };
 
   const load = useCallback(async () => {
     try { const data = await apiFetch(`/delivery/orders/${id}`); setOrder(data.order); setError(''); }
@@ -128,11 +149,11 @@ export default function OrderDetail({ gps = { status: 'idle', accuracy: null, er
       )}
       <div className="detail-grid">
         <div className="detail-stack">
-          <section className="panel"><div className="panel-title"><h2>Cliente y destino</h2></div><dl className="data-list"><div><dt>Nombre</dt><dd>{order.customerName}</dd></div><div><dt>Teléfono</dt><dd>{order.customerPhone}</dd></div><div><dt>Dirección</dt><dd>{order.address}</dd></div><div><dt>Barrio</dt><dd>{order.barrio || '—'}</dd></div>{order.apartment && <div><dt>Apartamento</dt><dd>{order.apartment}</dd></div>}{order.tower && <div><dt>Torre</dt><dd>{order.tower}</dd></div>}{order.floor && <div><dt>Piso</dt><dd>{order.floor}</dd></div>}<div><dt>Referencia</dt><dd>{order.reference || 'Sin referencia'}</dd></div><div><dt>Ubicación</dt><dd>{order.destinationLatitude != null ? 'Confirmada por el cliente' : 'Basada en la dirección escrita'}</dd></div><div><dt>Observaciones</dt><dd>{order.notes || 'Sin observaciones'}</dd></div></dl><div className="quick-actions"><a className="quick-button" href={order.phoneLink}><Phone /> Llamar</a><a className="quick-button" href={order.whatsappLink} target="_blank" rel="noreferrer"><MessageCircle /> WhatsApp</a><a className="quick-button primary" href={order.googleMapsUrl} target="_blank" rel="noreferrer"><Navigation /> Abrir navegación</a></div></section>
+          <section className="panel"><div className="panel-title"><h2>Cliente y destino</h2></div><dl className="data-list"><div><dt>Nombre</dt><dd>{order.customerName}</dd></div><div><dt>Teléfono</dt><dd>{order.customerPhone}</dd></div><div><dt>Dirección</dt><dd>{order.address}</dd></div><div><dt>Barrio</dt><dd>{order.barrio || '—'}</dd></div>{order.apartment && <div><dt>Apartamento</dt><dd>{order.apartment}</dd></div>}{order.tower && <div><dt>Torre</dt><dd>{order.tower}</dd></div>}{order.floor && <div><dt>Piso</dt><dd>{order.floor}</dd></div>}<div><dt>Referencia</dt><dd>{order.reference || 'Sin referencia'}</dd></div><div><dt>Ubicación</dt><dd>{order.destinationLatitude != null ? 'Confirmada por el cliente' : 'Basada en la dirección escrita'}</dd></div><div><dt>Observaciones</dt><dd>{order.notes || 'Sin observaciones'}</dd></div></dl><div className="quick-actions"><a className="quick-button" href={order.phoneLink}><Phone /> Llamar</a><a className="quick-button" href={order.whatsappLink} target="_blank" rel="noreferrer"><MessageCircle /> WhatsApp</a><button type="button" className="quick-button primary" onClick={() => setNavModalOpen(true)}><Navigation /> Navegar</button></div></section>
           <section className="panel"><div className="panel-title"><h2>Productos</h2><span>{order.items.length} referencias</span></div><div className="product-list">{order.items.map((item, index) => <div className="product-row" key={`${item.id}-${index}`}><span className="qty">{item.quantity}×</span><div><b>{item.title}</b>{item.notes && <small>{item.notes}</small>}</div><strong>{money(item.price * item.quantity)}</strong></div>)}</div>{order.notes && <div className="order-note"><b>Observación general</b><p>{order.notes}</p></div>}</section>
         </div>
         <aside className="detail-sidebar"><section className="panel sticky-panel"><div className="panel-title"><h2>Resumen</h2></div><dl className="money-list"><div><dt>Pedido</dt><dd>{money(order.total)}</dd></div><div><dt>Valor domicilio</dt><dd>{money(order.deliveryFee)}</dd></div><div><dt>Método de pago</dt><dd>{order.paymentMethod}</dd></div>{order.changeRequired != null && <div><dt>Cambio requerido</dt><dd>{money(order.changeRequired)}</dd></div>}</dl>
-          <a className="button button-ghost button-large" href={order.googleMapsUrl} target="_blank" rel="noreferrer"><MapPin size={19} /> Google Maps</a>
+          <button type="button" className="button button-ghost button-large" onClick={() => setNavModalOpen(true)}><MapPin size={19} /> Navegar (Maps / Waze)</button>
           {(canPickup || canComplete) && (
             <div className="delivery-order-map">
               <div className="delivery-order-map__heading">
@@ -156,6 +177,40 @@ export default function OrderDetail({ gps = { status: 'idle', accuracy: null, er
         </section></aside>
       </div>
       {finish && <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setFinish(false); }}><form className="modal-card" onSubmit={complete}><div className="panel-title"><div><span className="eyebrow">Pedido #{id}</span><h2>Confirmar entrega</h2></div><button type="button" className="modal-close" onClick={() => setFinish(false)}>×</button></div><label className="confirmation-check"><input type="checkbox" required checked={delivery.confirmReceived} onChange={(event) => setDelivery({ ...delivery, confirmReceived: event.target.checked })} /><CheckCircle2 /><span><b>El cliente recibió el pedido</b><small>Esta confirmación es obligatoria.</small></span></label><label>Observaciones<textarea rows="3" value={delivery.notes} onChange={(event) => setDelivery({ ...delivery, notes: event.target.value })} placeholder="Novedades de la entrega…" /></label><label>Calificación opcional<div className="rating-row">{[1,2,3,4,5].map((rating) => <button type="button" key={rating} className={Number(delivery.rating) >= rating ? 'active' : ''} onClick={() => setDelivery({ ...delivery, rating })}><Star /></button>)}</div></label><label className="camera-field"><Camera /> <span><b>{delivery.evidence ? 'Fotografía agregada' : 'Tomar fotografía opcional'}</b><small>Se comprime antes de enviarse.</small></span><input type="file" accept="image/*" capture="environment" onChange={evidence} /></label><button className="button button-primary button-large" disabled={busy || !delivery.confirmReceived}>{busy ? 'Finalizando…' : 'Confirmar entrega'}</button></form></div>}
+      {navModalOpen && (
+        <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setNavModalOpen(false); }}>
+          <div className="modal-card" style={{ maxWidth: '380px' }}>
+            <div className="panel-title">
+              <div>
+                <span className="eyebrow">Ruta de entrega</span>
+                <h2>Seleccionar Navegador</h2>
+              </div>
+              <button type="button" className="modal-close" onClick={() => setNavModalOpen(false)}>×</button>
+            </div>
+            <p style={{ margin: '8px 0 18px', fontSize: '13px', color: 'rgba(255, 255, 255, 0.7)' }}>
+              Elige tu aplicación preferida para abrir la ruta hacia {order.customerName || 'el cliente'}:
+            </p>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+              <button
+                type="button"
+                className="button button-primary button-large"
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px' }}
+                onClick={() => startNavigation('google-maps')}
+              >
+                <MapPin size={20} /> Abrir con Google Maps
+              </button>
+              <button
+                type="button"
+                className="button button-ghost button-large"
+                style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '10px', borderColor: '#33ccff', color: '#33ccff' }}
+                onClick={() => startNavigation('waze')}
+              >
+                <Navigation size={20} /> Abrir con Waze
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

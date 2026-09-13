@@ -1,12 +1,16 @@
 import { API_URL } from '../config/api';
 
+import { Capacitor } from '@capacitor/core';
+
 export const ACCESS_KEY = 'distrito_delivery_token';
 export const REFRESH_KEY = 'distrito_delivery_refresh';
 export const PROFILE_KEY = 'distrito_delivery_profile';
 let refreshPromise = null;
 
+const isNativePlatform = () => typeof Capacitor !== 'undefined' && Capacitor.isNativePlatform?.();
+
 export function accessToken() {
-  return sessionStorage.getItem(ACCESS_KEY);
+  return sessionStorage.getItem(ACCESS_KEY) || (isNativePlatform() ? localStorage.getItem(ACCESS_KEY) : null);
 }
 
 export function refreshToken() {
@@ -16,17 +20,22 @@ export function refreshToken() {
 export function clearCredentials(notice = '') {
   sessionStorage.removeItem(ACCESS_KEY);
   sessionStorage.removeItem(REFRESH_KEY);
+  localStorage.removeItem(ACCESS_KEY);
   localStorage.removeItem(REFRESH_KEY);
   localStorage.removeItem(PROFILE_KEY);
   if (notice) sessionStorage.setItem('distrito_delivery_notice', notice);
 }
 
 export function storeCredentials(data, remember = null) {
-  if (data.token) sessionStorage.setItem(ACCESS_KEY, data.token);
+  const isNative = isNativePlatform();
+  if (data.token) {
+    sessionStorage.setItem(ACCESS_KEY, data.token);
+    if (isNative || remember === true) localStorage.setItem(ACCESS_KEY, data.token);
+  }
   if (data.refreshToken) {
     sessionStorage.setItem(REFRESH_KEY, data.refreshToken);
-    if (remember === true) localStorage.setItem(REFRESH_KEY, data.refreshToken);
-    if (remember === false) localStorage.removeItem(REFRESH_KEY);
+    if (isNative || remember === true) localStorage.setItem(REFRESH_KEY, data.refreshToken);
+    if (remember === false && !isNative) localStorage.removeItem(REFRESH_KEY);
   }
   if (data.user) localStorage.setItem(PROFILE_KEY, JSON.stringify(data.user));
 }
