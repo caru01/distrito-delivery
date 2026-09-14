@@ -6,7 +6,7 @@ const STEPS = ['Pendiente', 'Aceptado', 'En camino', 'Entregado'];
 
 export default function StatusTimeline({ status }) {
   if (status === 'Cancelado') return <div className="status-cancelled">Pedido cancelado</div>;
-  const normalizedStatus = status === 'Recogido' ? 'En camino' : status;
+  const normalizedStatus = status === 'Recogido' || status === 'Entregado al operador externo' ? 'En camino' : (status === 'Asignado externo' ? 'Aceptado' : status);
   const normalized = STEPS.indexOf(normalizedStatus);
   return (
     <div className="timeline" aria-label={`Estado: ${status}`}>
